@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pneumonia Detection Simulator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body { box-sizing: border-box; }
+
+    .upload-zone {
+      border: 3px dashed #d1d5db;
+      transition: all 0.3s ease;
+    }
+    .upload-zone:hover {
+      border-color: #3b82f6;
+      background-color: #f8fafc;
+    }
+    .upload-zone.dragover {
+      border-color: #3b82f6;
+      background-color: #eff6ff;
+      transform: scale(1.02);
+    }
+
+    .analysis-progress {
+      background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+      animation: progress 3s ease-in-out;
+    }
+    @keyframes progress {
+      0% { width: 0%; }
+      30% { width: 25%; }
+      60% { width: 70%; }
+      100% { width: 100%; }
+    }
+
+    .result-card {
+      transform: translateY(20px);
+      opacity: 0;
+      animation: slideUp 0.6s ease forwards;
+    }
+    @keyframes slideUp {
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .confidence-meter {
+      background: conic-gradient(from 0deg, #ef4444 0deg, #f59e0b 120deg, #10b981 240deg, #10b981 360deg);
+      border-radius: 50%;
+      position: relative;
+    }
+    .confidence-inner {
+      background: white;
+      border-radius: 50%;
+      position: absolute;
+      top: 10px; left: 10px; right: 10px; bottom: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .heatmap-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: radial-gradient(circle at 65% 55%, rgba(239, 68, 68, 0.4) 0%, transparent 30%),
+                  radial-gradient(circle at 70% 40%, rgba(251, 146, 60, 0.3) 0%, transparent 25%);
+      border-radius: 8px;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+    .heatmap-overlay.show { opacity: 1; }
+
+    .processing-dots { display: inline-flex; gap: 4px; }
+    .processing-dots span {
+      width: 8px; height: 8px;
+      background: #3b82f6;
+      border-radius: 50%;
+      animation: bounce 1.4s ease-in-out infinite both;
+    }
+    .processing-dots span:nth-child(1) { animation-delay: -0.32s; }
+    .processing-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+  </style>
+</head>
+
+<body class="min-h-full bg-gradient-to-br from-blue-50 to-indigo-100">
+  <main class="container mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <header class="text-center mb-8">
+      <h1 id="main-title" class="text-4xl font-bold text-gray-800 mb-4">Pneumonia Detection System</h1>
+      <p id="subtitle" class="text-xl text-gray-600">Advanced Chest X-ray Analysis</p>
+    </header>
+
+    <div class="max-w-4xl mx-auto">
+
+      <!-- Upload Section -->
+      <div id="upload-section" class="bg-white rounded-xl shadow-lg p-8 mb-8">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-6">Upload Chest X-ray</h2>
+        <div id="upload-zone" class="upload-zone rounded-xl p-12 text-center cursor-pointer">
+          <div class="space-y-4">
+            <div class="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+              <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </div>
+            <div>
+              <p id="upload-text" class="text-lg font-medium text-gray-700">
+                Drop your X-ray image here or click to browse
+              </p>
+              <p class="text-sm text-gray-500 mt-2">Supports JPEG, PNG files up to 10MB</p>
+            </div>
+            <button class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+              Select File
+            </button>
+          </div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" class="hidden" />
+      </div>
+
+      <!-- Processing Section -->
+      <div id="processing-section" class="bg-white rounded-xl shadow-lg p-8 mb-8 hidden">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-6">Analyzing X-ray</h2>
+        <div class="space-y-6">
+          <div class="flex items-center gap-4">
+            <div class="w-16 h-16 bg-gray-200 rounded-lg overflow-hidden">
+              <img id="uploaded-preview" class="w-full h-full object-cover" alt="Uploaded X-ray" />
+            </div>
+            <div class="flex-1">
+              <p class="font-medium text-gray-700">Processing with advanced algorithms</p>
+              <div class="processing-dots mt-2"><span></span><span></span><span></span></div>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <div class="flex justify-between text-sm">
+              <span class="text-gray-600">Analysis Progress</span>
+              <span id="progress-text" class="text-blue-600 font-medium">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+              <div id="progress-bar" class="analysis-progress h-3 rounded-full" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      <div id="results-section" class="hidden">
+        <div class="grid lg:grid-cols-2 gap-8">
+          <!-- X-ray Analysis -->
+          <div class="bg-white rounded-xl shadow-lg p-6">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">X-ray Analysis</h3>
+            <div class="relative bg-gray-900 rounded-lg overflow-hidden aspect-square">
+              <img id="analysis-image" class="w-full h-full object-cover opacity-80" alt="X-ray for analysis" />
+              <div id="heatmap" class="heatmap-overlay"></div>
+              <div class="absolute top-4 right-4 bg-black bg-opacity-75 text-white px-3 py-1 rounded text-sm">
+                Analysis Overlay
+              </div>
+            </div>
+            <div class="mt-4 flex justify-center">
+              <button id="toggle-heatmap"
+                      class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                Toggle Heat Map
+              </button>
+            </div>
+          </div>
+
+          <!-- Results & Recommendations -->
+          <div class="space-y-6">
+            <div id="main-result" class="result-card bg-white rounded-xl shadow-lg p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-semibold text-gray-800">Detection Result</h3>
+                <div class="confidence-meter w-16 h-16">
+                  <div class="confidence-inner">
+                    <span id="confidence-percentage" class="text-sm font-bold text-gray-800">0%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="space-y-3">
+                <div><span class="text-gray-600">Diagnosis:</span>
+                  <span id="diagnosis-result" class="ml-2 text-lg font-bold text-red-600">Pending...</span></div>
+                <div><span class="text-gray-600">Confidence Level:</span>
+                  <span id="confidence-level" class="ml-2 font-semibold text-gray-800">-</span></div>
+                <div><span class="text-gray-600">Affected Area:</span>
+                  <span class="ml-2 text-gray-800">Right lower lobe</span></div>
+              </div>
+            </div>
+
+            <div class="result-card bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+              <h3 class="text-xl font-semibold text-gray-800 mb-4">Recommendations</h3>
+              <div class="space-y-2 text-gray-700">
+                <p>• Immediate consultation with a radiologist</p>
+                <p>• Consider additional imaging if needed</p>
+                <p>• Clinical correlation recommended</p>
+                <p>• Follow-up X-ray after treatment</p>
+              </div>
+            </div>
+
+            <div class="result-card flex gap-4">
+              <button id="new-analysis"
+                      class="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                Analyze Another X-ray
+              </button>
+              <button id="download-report"
+                      class="flex-1 bg-gray-600 text-white py-3 rounded-lg hover:bg-gray-700 transition-colors">
+                Download Report
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presented By -->
+      <footer class="mt-12 text-center text-gray-700">
+        <div class="border-t border-gray-300 pt-6">
+          <p class="text-lg font-medium">
+            Presented by <span class="text-blue-700 font-semibold">Abhaysinh Jadhav</span>,
+            <span class="text-blue-700 font-semibold">Tanuja Gaikwad</span>, and
+            <span class="text-blue-700 font-semibold">Mansi Jain</span>
+          </p>
+          <p class="text-sm text-gray-500 mt-1">Pneumonia Detection System • 2025</p>
+        </div>
+      </footer>
+
+    </div>
+  </main>
+
+  <!-- JS Logic -->
+  <script>
+    let heatmapVisible = false;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const uploadZone = document.getElementById('upload-zone');
+      const fileInput = document.getElementById('file-input');
+
+      uploadZone.addEventListener('click', () => fileInput.click());
+      uploadZone.addEventListener('dragover', e => {
+        e.preventDefault();
+        uploadZone.classList.add('dragover');
+      });
+      uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+      uploadZone.addEventListener('drop', e => {
+        e.preventDefault();
+        uploadZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]);
+      });
+      fileInput.addEventListener('change', e => {
+        if (e.target.files.length > 0) processFile(e.target.files[0]);
+      });
+
+      document.getElementById('toggle-heatmap').addEventListener('click', toggleHeatmap);
+      document.getElementById('new-analysis').addEventListener('click', resetAnalysis);
+      document.getElementById('download-report').addEventListener('click', downloadReport);
+    });
+
+    function processFile(file) {
+      if (!file.type.startsWith('image/')) {
+        showMessage('Please select a valid image file.', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = e => startAnalysis(e.target.result);
+      reader.readAsDataURL(file);
+    }
+
+    function startAnalysis(imageData) {
+      document.getElementById('upload-section').classList.add('hidden');
+      document.getElementById('processing-section').classList.remove('hidden');
+      document.getElementById('uploaded-preview').src = imageData;
+      simulateProgress();
+      setTimeout(() => showResults(imageData), 4000);
+    }
+
+    function simulateProgress() {
+      const bar = document.getElementById('progress-bar');
+      const text = document.getElementById('progress-text');
+      let p = 0;
+      const interval = setInterval(() => {
+        p += Math.random() * 15;
+        if (p > 100) p = 100;
+        bar.style.width = p + '%';
+        text.textContent = Math.round(p) + '%';
+        if (p >= 100) clearInterval(interval);
+      }, 200);
+    }
+
+    function showResults(imageData) {
+      document.getElementById('processing-section').classList.add('hidden');
+      document.getElementById('results-section').classList.remove('hidden');
+      document.getElementById('analysis-image').src = imageData;
+
+      const isPneumonia = Math.random() > 0.3;
+      const confidence = isPneumonia ? Math.floor(Math.random() * 20) + 75 : Math.floor(Math.random() * 15) + 85;
+      updateResults(isPneumonia, confidence);
+    }
+
+    function updateResults(isPneumonia, confidence) {
+      const diagnosis = document.getElementById('diagnosis-result');
+      const confidenceText = document.getElementById('confidence-percentage');
+      const confidenceLevel = document.getElementById('confidence-level');
+      const card = document.getElementById('main-result');
+
+      confidenceText.textContent = confidence + '%';
+      if (isPneumonia) {
+        diagnosis.textContent = 'Pneumonia Detected';
+        diagnosis.className = 'ml-2 text-lg font-bold text-red-600';
+        confidenceLevel.textContent = `High (${confidence}%)`;
+        card.style.borderLeft = '4px solid #ef4444';
+      } else {
+        diagnosis.textContent = 'Normal';
+        diagnosis.className = 'ml-2 text-lg font-bold text-green-600';
+        confidenceLevel.textContent = `Very High (${confidence}%)`;
+        card.style.borderLeft = '4px solid #10b981';
+      }
+    }
+
+    function toggleHeatmap() {
+      heatmapVisible = !heatmapVisible;
+      document.getElementById('heatmap').classList.toggle('show', heatmapVisible);
+    }
+
+    function resetAnalysis() {
+      document.getElementById('results-section').classList.add('hidden');
+      document.getElementById('upload-section').classList.remove('hidden');
+      document.getElementById('file-input').value = '';
+      document.getElementById('heatmap').classList.remove('show');
+      heatmapVisible = false;
+    }
+
+    function showMessage(msg, type) {
+      const toast = document.createElement('div');
+      toast.className = `fixed top-4 right-4 p-4 rounded-lg text-white z-50 ${
+        type === 'error' ? 'bg-red-500' : 'bg-green-500'
+      }`;
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    function downloadReport() {
+      const result = document.getElementById('diagnosis-result').textContent;
+      const confidence = document.getElementById('confidence-level').textContent;
+      const report = {
+        diagnosis: result,
+        confidence,
+        timestamp: new Date().toLocaleString()
+      };
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pneumonia_report.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showMessage('Report downloaded successfully!', 'success');
+    }
+  </script>
+</body>
+</html>
